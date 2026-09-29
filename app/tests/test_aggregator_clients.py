@@ -79,8 +79,8 @@ def test_adzuna_only_fetches_full_jd_for_promising_thin_snippets():
     only for the subset that's both a real candidate AND thin. This is
     what keeps a 2000-result run from turning into 2000 extra requests."""
     base_result = lambda **kw: {
-        "title": "Software Engineer, Backend",
-        "location": {"display_name": "Alberta, Canada"},
+        "title": "Junior DevOps Engineer",
+        "location": {"display_name": "Baltimore, Maryland"},
         "company": {"display_name": "TestCo"},
         "redirect_url": "https://www.adzuna.ca/details/x",
         "created": "2026-08-01",
@@ -116,8 +116,8 @@ def test_adzuna_queues_discovered_companies():
     company should land in DISCOVERED_COMPANIES for discover_companies.py
     to pick up after the run — see main.py."""
     result = {
-        "title": "Software Engineer, Automated Marketing",
-        "location": {"display_name": "Alberta, Canada"},
+        "title": "Linux Systems Administrator",
+        "location": {"display_name": "Columbia, MD"},
         "company": {"display_name": "Warner Music Group"},
         "redirect_url": "https://www.adzuna.ca/details/5702928490",
         "created": "2026-04-17",
@@ -140,6 +140,22 @@ def test_adzuna_queues_discovered_companies():
     print("fetch_adzuna: resolved Greenhouse/Lever match queued into DISCOVERED_COMPANIES — OK")
 
 
+def test_adzuna_country_is_configurable():
+    """`country` is Adzuna's URL path segment, not a query param: it must
+    end up in the URL and never be sent as ?country=."""
+    page_resp = _fake_response("...", json_data={"results": []})
+
+    import os
+    with patch.dict(os.environ, {"ADZUNA_APP_ID": "id", "ADZUNA_APP_KEY": "key"}), \
+         patch("httpx.get", return_value=page_resp) as mock_get:
+        aggregator_clients.fetch_adzuna({"country": "us", "what": "devops", "max_pages": 1})
+
+    url = mock_get.call_args.args[0]
+    assert "/jobs/us/search/1" in url
+    assert "country" not in mock_get.call_args.kwargs["params"]
+    print("fetch_adzuna: country goes in the URL path — OK")
+
+
 if __name__ == "__main__":
     test_full_description_prefers_greenhouse_api()
     test_full_description_prefers_lever_api()
@@ -147,4 +163,5 @@ if __name__ == "__main__":
     test_full_description_returns_none_on_failure()
     test_adzuna_only_fetches_full_jd_for_promising_thin_snippets()
     test_adzuna_queues_discovered_companies()
+    test_adzuna_country_is_configurable()
     print("\nAll assertions passed.")

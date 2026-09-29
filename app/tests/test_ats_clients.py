@@ -37,7 +37,8 @@ def _detail_resp(job_description="", qualifications="", additional=""):
     return resp
 
 
-def _posting(id="1", name="Software Engineer", city="Calgary", region="AB", country="Canada", remote=False):
+def _posting(id="1", name="Junior DevOps Engineer", city="Baltimore", region="MD", country="United States",
+             remote=False):
     return {
         "id": id, "name": name,
         "location": {"city": city, "region": region, "country": country, "remote": remote},
@@ -52,8 +53,8 @@ def test_basic_parsing_and_remote_location():
     assert len(jobs) == 1
     j = jobs[0]
     assert j["company"] == "TestCo"
-    assert j["title"] == "Software Engineer"
-    assert j["location"] == "Remote (Calgary, AB, Canada)"
+    assert j["title"] == "Junior DevOps Engineer"
+    assert j["location"] == "Remote (Baltimore, MD, United States)"
     assert j["posted_at"] == "2026-08-01T00:00:00.000Z"
     assert j["url"] == "https://jobs.smartrecruiters.com/testco/1"  # fallback construction, no applyUrl/ref given
     assert "Python" in j["description"]
@@ -74,7 +75,7 @@ def test_pagination_across_pages():
     page2 = [_posting(id="100")]  # short page -> stop
 
     # Only postings that pass title/location trigger a detail fetch; all
-    # 101 here are "Software Engineer" / Calgary, AB -> all gated in, so
+    # 101 here are "Junior DevOps Engineer" / Baltimore, MD -> all gated in, so
     # interleave list/detail responses accordingly.
     responses = [_list_resp(page1)]
     responses += [_detail_resp("JD") for _ in range(100)]
@@ -94,9 +95,11 @@ def test_pagination_across_pages():
 
 
 def test_description_fetch_gated_to_promising_postings():
-    promising = _posting(id="1", name="Software Engineer", city="Calgary", region="AB", country="Canada")
+    promising = _posting(id="1", name="Junior DevOps Engineer", city="Baltimore", region="MD",
+                         country="United States")
     not_promising_title = _posting(id="2", name="Marketing Operations Manager")
-    not_promising_location = _posting(id="3", name="Software Engineer", city="Warsaw", region="", country="Poland")
+    not_promising_location = _posting(id="3", name="Junior DevOps Engineer", city="Warsaw", region="",
+                                      country="Poland")
 
     with patch("httpx.get", side_effect=[
         _list_resp([promising, not_promising_title, not_promising_location]),

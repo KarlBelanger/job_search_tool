@@ -8,7 +8,8 @@ each candidate's fit against your own experience with Claude, and review
 the results in a local web board.
 
 Nothing here talks to any service other than the job sources you configure
-and (for the optional AI step) the Anthropic API. All state — scraped
+and (for the optional AI step) Claude, via either the Anthropic API or
+your own signed-in Claude Code CLI. All state — scraped
 jobs, scores, your own notes — lives in a local SQLite database; nothing
 is sent to a third party beyond fetching the postings themselves.
 
@@ -29,7 +30,8 @@ is sent to a third party beyond fetching the postings themselves.
    SQLite database (`data/seen_jobs.sqlite3`), keyed by URL and by
    normalized company+title, so re-runs only ever surface genuinely new
    postings.
-4. **AI evaluation** (`app/ai_evaluate.py`, optional, costs money) — sends
+4. **AI evaluation** (`app/ai_evaluate.py`, optional; API credits or your
+   Claude subscription's usage) — sends
    each filtered candidate plus your `profile.yaml` to Claude, which scores
    fit (0-100) and returns concrete gaps, transferable strengths, risk
    factors, and an apply/consider/skip recommendation.
@@ -58,7 +60,9 @@ not the bar. For a fully worked (fictional) example showing the level of
 specificity/quantification each evidence bullet should actually have, see
 [`profile.sample.yaml`](profile.sample.yaml).
 
-`ANTHROPIC_API_KEY` is only needed for the AI evaluation step. Adzuna
+`ANTHROPIC_API_KEY` is only needed for the AI evaluation step, and only
+with the default `AI_BACKEND=api` (see "Using your Claude subscription"
+below for the alternative). Adzuna
 (`ADZUNA_APP_ID`/`ADZUNA_APP_KEY`) is only needed if you keep an Adzuna
 entry in `aggregators.yaml` — register a free key at
 [developer.adzuna.com](https://developer.adzuna.com). Remotive needs no
@@ -66,27 +70,25 @@ auth but only covers remote roles.
 
 ### Customize for your own search
 
-This repo ships pre-configured for the original author's search (Alberta/
-Canada, Python/JS stack). **Before your first run, edit these three
-files** or you'll get zero candidates, or candidates that don't match your
-actual stack:
+This fork is configured for a **junior / entry-level DevOps, Linux and
+cloud infrastructure search** in the Baltimore / Washington DC / Northern
+Virginia area plus US-remote, with a narrow accessibility-testing track.
+To retarget it, edit:
 
-1. **`filters.yaml` → `location_allow_patterns`** — regex patterns for
-   locations to keep. Ships as Canada/Alberta-only; replace with your own
-   country/region/cities, or delete entries to broaden it. This is the
-   #1 reason a first run returns nothing — if nothing you fetch ever
-   matches these patterns, `location_is_allowed()` rejects every job.
-2. **`filters.yaml` → `stack_dealbreakers` / `stack_core`** — a JD is
-   rejected if it mentions a `stack_dealbreakers` language and none of
-   `stack_core`. Ships assuming you want Python/JS and don't want
-   Java/C#/.NET/etc. If your own stack includes one of the "dealbreaker"
-   languages, move it into `stack_core` (or the filter will reject roles
-   in your own stack).
-3. **`companies.yaml`** — the company registry. Ships with the original
-   author's real target list; add/remove companies to match who you're
-   actually applying to (see the file's header comment for the format).
-   `aggregators.yaml`'s `where` params are also location-specific —
-   update those too if you're not targeting Alberta/Canada.
+1. **`filters.yaml`** — target titles (`priority_title_keywords`,
+   `title_allow_keywords`), the junior-only `seniority_exclude_keywords`,
+   `location_allow_patterns`, the infra `stack_core`, and the JD checks:
+   `clearance_patterns` (drops any role mentioning a security clearance),
+   `required_cert_patterns` (drops roles that *require* an accessibility
+   certification; "preferred" is fine) and `max_required_years_experience`
+   (drops roles requiring 5+ years). If nothing you fetch ever matches
+   `location_allow_patterns`, every job gets rejected.
+2. **`aggregators.yaml`** — Adzuna searches (`country: us`, keywords,
+   `where` + `distance`) and Remotive categories.
+3. **`companies.yaml`** — the company registry. Still the original
+   author's list of Canadian/remote tech employers; the location filter
+   keeps only their US-remote and DC-area roles. Add companies you're
+   actually targeting (see the file's header comment for the format).
 
 ## Usage
 
@@ -103,7 +105,7 @@ make run                              # same thing, interactive prompts instead 
 
 Output: `data/candidates.csv`, appended to on every run.
 
-### 2. AI evaluation (optional, costs money)
+### 2. AI evaluation (optional)
 
 ```bash
 python -m app.ai_evaluate --dry-run   # see what's queued, no API calls, no cost
@@ -141,6 +143,31 @@ Thin wrappers over the commands above — run from the repo root:
 | `make test`     | `pytest app/` + the standalone sanity-check scripts | Runs the full test suite (see the Tests section below). |
 
 `make` with no target runs `make run` (the default goal).
+
+### Using your Claude subscription instead of API credits
+
+Set `AI_BACKEND=claude-cli` in `.env` to score jobs through your locally
+installed Claude Code CLI (`claude -p`) instead of the Anthropic API. It
+uses whatever account `claude` is signed in to, so with a Pro/Max login
+there are no per-call API charges; each job scored counts against your
+plan's usage limits instead, so keep runs to tens of jobs with `--limit`.
+
+Setup: install Claude Code, run `claude` once and sign in with your
+claude.ai account. `claude auth status` should show `"authMethod":
+"claude.ai"`. If `claude` isn't on your PATH, set `CLAUDE_CLI_PATH`.
+
+Each call runs with no tools (`--tools ""`), without your CLAUDE.md,
+hooks, skills, plugins or MCP servers (`--safe-mode`), and with the same
+system prompt and output schema as the API backend. It deliberately does
+not use `--bare`, which only accepts an API key.
+
+This is meant for personal use on your own machine. Anthropic's
+[Claude Code legal and compliance page](https://code.claude.com/docs/en/legal-and-compliance)
+says subscription login is for ordinary use of Claude Code and that
+third-party developers may not route requests through Free/Pro/Max
+credentials on behalf of their users; it also says that doesn't prevent
+an end user from signing in to the unmodified Claude Code binary with
+their own subscription. Don't host this for other people on your login.
 
 ## Configuration
 

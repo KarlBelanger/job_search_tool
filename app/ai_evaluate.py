@@ -7,15 +7,24 @@ judgment — not a title match. Results are stored in the ai_evaluations
 table (see dedup.py) and written out to data/scored_candidates.csv, best
 match first.
 
-This is the ONLY part of the pipeline that costs money — everything
+This is the ONLY part of the pipeline that uses Claude — everything
 upstream (fetch, filter, dedup) is free. That's the whole point of doing
 filtering deterministically first: by the time a job reaches this script,
 it's already passed title/location/stack screening, so the AI-scored
 volume should be small.
 
-Setup:
-    pip install anthropic
-    export ANTHROPIC_API_KEY=sk-ant-...
+Two backends, picked with AI_BACKEND in .env:
+
+    AI_BACKEND=api         (default) Anthropic API via the `anthropic`
+                           package. Needs ANTHROPIC_API_KEY; billed per call.
+    AI_BACKEND=claude-cli  Runs each evaluation through your locally
+                           installed, signed-in Claude Code CLI (`claude -p`),
+                           so it uses your own Claude subscription instead of
+                           API credits and counts against your plan's usage
+                           limits. Personal use on your own machine only —
+                           see the README's "Using your Claude subscription"
+                           section. Needs `claude` on PATH (or CLAUDE_CLI_PATH)
+                           and a prior `claude` login.
 
 Usage:
     python app/ai_evaluate.py              # evaluate everything unscored
@@ -24,8 +33,12 @@ Usage:
 """
 import argparse
 import csv
+import json
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -37,6 +50,8 @@ from app import filters
 load_dotenv()
 
 MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5")
+AI_BACKEND = os.environ.get("AI_BACKEND", "api").strip().lower()
+CLI_TIMEOUT_SECONDS = 300
 OUTPUT_CSV = Path("data/scored_candidates.csv")
 
 REQUIRED_EVAL_FIELDS = ["match_score", "recommendation", "genuine_gaps", "transferable_strengths", "risk_factors"]
@@ -151,28 +166,96 @@ def _missing_fields(evaluation: dict) -> list[str]:
     return [f for f in REQUIRED_EVAL_FIELDS if f not in evaluation]
 
 
+class ClaudeCliClient:
+    """Stand-in for anthropic.Anthropic that runs each evaluation through
+    the Claude Code CLI in non-interactive mode (`claude -p`), which
+    authenticates with whatever the user is signed in to — their own
+    Claude subscription, if they logged in with a claude.ai account.
+
+    The call is locked down to a plain question-and-answer: --tools ""
+    gives the model no tools at all (it can't read or change files),
+    --safe-mode skips CLAUDE.md, hooks, skills, plugins and MCP servers so
+    nothing from the user's own Claude Code setup leaks into the prompt,
+    and it runs from a temp directory. --json-schema makes the CLI return
+    the evaluation in `structured_output`.
+
+    Deliberately NOT --bare: bare mode ignores subscription login and only
+    accepts an API key, which defeats the point of this backend."""
+
+    def __init__(self, cli_path: str, model: str, timeout: int = CLI_TIMEOUT_SECONDS):
+        self.cli_path = cli_path
+        self.model = model
+        self.timeout = timeout
+
+    def build_command(self) -> list[str]:
+        return [
+            self.cli_path, "-p",
+            "--model", self.model,
+            "--system-prompt", SYSTEM_PROMPT,
+            "--tools", "",
+            "--safe-mode",
+            "--no-session-persistence",
+            "--output-format", "json",
+            "--json-schema", json.dumps(EVALUATION_SCHEMA["input_schema"]),
+        ]
+
+    def evaluate(self, user_content: str) -> dict | None:
+        """Returns the structured evaluation, or None if the CLI answered
+        without one. Raises RuntimeError if the CLI itself failed (not
+        signed in, usage limit reached, timeout...)."""
+        try:
+            proc = subprocess.run(
+                self.build_command(),
+                input=user_content,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=self.timeout,
+                cwd=tempfile.gettempdir(),
+            )
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"claude CLI timed out after {self.timeout}s")
+        try:
+            data = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            detail = (proc.stderr or proc.stdout or "").strip()[:500]
+            raise RuntimeError(f"claude CLI exited {proc.returncode} without JSON output: {detail}")
+        if data.get("is_error") or proc.returncode != 0:
+            raise RuntimeError(f"claude CLI reported an error: {str(data.get('result', data))[:500]}")
+        return data.get("structured_output")
+
+
+def _call_model(client, user_content: str, max_tokens: int) -> tuple[dict | None, str]:
+    """One model call via whichever backend `client` is. Returns the
+    evaluation dict (or None if the model didn't produce one) plus a
+    stop_reason for error messages."""
+    if isinstance(client, ClaudeCliClient):
+        return client.evaluate(user_content), "no structured_output"
+    resp = client.messages.create(
+        model=MODEL,
+        max_tokens=max_tokens,
+        system=SYSTEM_PROMPT,
+        tools=[EVALUATION_SCHEMA],
+        tool_choice={"type": "tool", "name": "submit_evaluation"},
+        messages=[{"role": "user", "content": user_content}],
+    )
+    return _extract_tool_input(resp), getattr(resp, "stop_reason", "unknown")
+
+
 def evaluate_one(client, profile: dict, job: dict, max_retries: int = 1) -> dict:
     """Calls the model and validates the tool response has every required
     field. A forced tool_choice on a smaller model can still emit a
     truncated/incomplete JSON object (this happened in production on
     2026-08-11 — see EVALUATION_SCHEMA's comment) if max_tokens is hit
     mid-generation; retry once with a bump to max_tokens before giving up,
-    rather than crashing the whole run on one bad response."""
+    rather than crashing the whole run on one bad response. `client` is an
+    anthropic.Anthropic or a ClaudeCliClient (see make_client)."""
     user_content = build_user_prompt(profile, job)
     max_tokens = 1536
 
     for attempt in range(max_retries + 1):
-        resp = client.messages.create(
-            model=MODEL,
-            max_tokens=max_tokens,
-            system=SYSTEM_PROMPT,
-            tools=[EVALUATION_SCHEMA],
-            tool_choice={"type": "tool", "name": "submit_evaluation"},
-            messages=[{"role": "user", "content": user_content}],
-        )
-        evaluation = _extract_tool_input(resp)
+        evaluation, stop_reason = _call_model(client, user_content, max_tokens)
         if evaluation is None:
-            stop_reason = getattr(resp, "stop_reason", "unknown")
             if attempt < max_retries:
                 max_tokens += 512  # give the retry more room in case it was truncation
                 continue
@@ -187,6 +270,29 @@ def evaluate_one(client, profile: dict, job: dict, max_retries: int = 1) -> dict
             continue
         raise RuntimeError(f"Model's response for {job['url']} is missing required field(s) "
                             f"{missing} after {max_retries + 1} attempt(s): {evaluation}")
+
+
+def make_client(backend: str = AI_BACKEND):
+    """Builds the client for the configured backend, or exits with a
+    setup message if it can't."""
+    if backend == "claude-cli":
+        cli_path = os.environ.get("CLAUDE_CLI_PATH") or shutil.which("claude")
+        if not cli_path:
+            sys.exit("AI_BACKEND=claude-cli but the `claude` command wasn't found. Install Claude Code "
+                     "and run `claude` once to sign in, or set CLAUDE_CLI_PATH.")
+        return ClaudeCliClient(cli_path, MODEL)
+    if backend != "api":
+        sys.exit(f"Unknown AI_BACKEND '{backend}' — use 'api' or 'claude-cli'.")
+
+    try:
+        import anthropic
+    except ImportError:
+        sys.exit("Missing dependency: pip install anthropic")
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        sys.exit("ANTHROPIC_API_KEY env var not set (or set AI_BACKEND=claude-cli to use your "
+                 "Claude subscription instead).")
+    return anthropic.Anthropic(api_key=api_key)
 
 
 def write_csv(conn, path: Path = OUTPUT_CSV) -> int:
@@ -225,15 +331,8 @@ if __name__ == "__main__":
                 print(f"WOULD EVALUATE | {job['company']:20s} | {job['title']}")
             sys.exit(0)
 
-        try:
-            import anthropic
-        except ImportError:
-            sys.exit("Missing dependency: pip install anthropic")
-
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
-        if not api_key:
-            sys.exit("ANTHROPIC_API_KEY env var not set.")
-        client = anthropic.Anthropic(api_key=api_key)
+        client = make_client()
+        print(f"Scoring with {MODEL} via the {AI_BACKEND} backend.")
 
         for i, job in enumerate(queue, 1):
             try:

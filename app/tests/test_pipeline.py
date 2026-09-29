@@ -1,7 +1,7 @@
-"""Sanity test for filters.py + dedup.py, using real sample data plus the
-actual noise patterns found in a live run on 2026-08-11 (Remote
-Poland/Spain/Australia leaking through, and non-engineering titles like
-Analyst/Manager/Marketing passing because the old filter was exclusion-only).
+"""Sanity test for filters.py + dedup.py against the junior DevOps /
+Linux / cloud search config (Baltimore, DC, Northern Virginia, US-remote),
+plus the noise patterns found in a live run on 2026-08-11 (Remote
+Poland/Spain/Australia leaking through, non-engineering titles passing).
 Run with: python -m app.tests.test_pipeline
 """
 import os
@@ -9,67 +9,67 @@ from app import filters
 from app import dedup
 
 SAMPLE_JOBS = [
-    # Should PASS: real fields, Canada-eligible remote, matches title allowlist
-    {"company": "Affirm", "title": "Senior Software Engineer, Backend (Batch Infrastructure)",
-     "location": "Remote Canada", "url": "https://job-boards.greenhouse.io/affirm/jobs/1111",
-     "description": "We use Python, FastAPI and React."},
+    # Should PASS: junior DevOps, Baltimore, infra stack in the JD
+    {"company": "Acme", "title": "Junior DevOps Engineer",
+     "location": "Baltimore, MD", "url": "https://job-boards.greenhouse.io/acme/jobs/1111",
+     "description": "Maintain Linux servers, Docker and GitHub Actions pipelines on AWS."},
     # Should FAIL: excluded title keyword (compliance)
-    {"company": "Affirm", "title": "Compliance Lead, Canada",
-     "location": "Remote Canada", "url": "https://job-boards.greenhouse.io/affirm/jobs/7788916003",
+    {"company": "Acme", "title": "Cloud Compliance Analyst",
+     "location": "Remote - US", "url": "https://job-boards.greenhouse.io/acme/jobs/7788916003",
      "description": ""},
-    # Should FAIL: location not in allowlist (Remote US)
-    {"company": "Affirm", "title": "Staff Software Engineer",
-     "location": "Remote US", "url": "https://job-boards.greenhouse.io/affirm/jobs/2222",
+    # Should FAIL: seniority (senior) even though it's a priority DevOps title
+    {"company": "Acme", "title": "Senior DevOps Engineer",
+     "location": "Baltimore, MD", "url": "https://job-boards.greenhouse.io/acme/jobs/2222",
      "description": ""},
     # Should FAIL: real noise from 2026-08-11 run — "Remote Poland" used to leak
     # through the old "\bremote\b(?!.*\bus\b)" pattern.
-    {"company": "Affirm", "title": "Analytics Engineer II",
-     "location": "Remote Poland", "url": "https://job-boards.greenhouse.io/affirm/jobs/7764109003",
+    {"company": "Acme", "title": "Site Reliability Engineer",
+     "location": "Remote Poland", "url": "https://job-boards.greenhouse.io/acme/jobs/7764109003",
      "description": ""},
-    # Should FAIL: real noise — title has no engineering keyword at all,
-    # old exclusion-only filter had nothing to catch this on.
-    {"company": "Affirm", "title": "Marketing Operations Manager",
-     "location": "Remote Canada", "url": "https://job-boards.greenhouse.io/affirm/jobs/9999",
+    # Should FAIL: title has no target keyword at all
+    {"company": "Acme", "title": "Marketing Operations Manager",
+     "location": "Remote - US", "url": "https://job-boards.greenhouse.io/acme/jobs/9999",
      "description": ""},
-    {"company": "Affirm", "title": "Senior Manager, Talent Brand",
-     "location": "Remote Canada", "url": "https://job-boards.greenhouse.io/affirm/jobs/9998",
-     "description": ""},
-    # Should PASS: real Alberta on-site posting
-    {"company": "Snorkel AI", "title": "Software Engineer — Backend",
-     "location": "Calgary, AB", "url": "https://job-boards.greenhouse.io/snorkelai/jobs/4911972004",
-     "description": "Backend role, Python and Go."},
-    # Should FAIL: excluded keyword (nurse)
-    {"company": "Some Co", "title": "Occupational Health Nurse",
-     "location": "Remote Canada", "url": "https://example.com/jobs/9999",
-     "description": ""},
-    # Should FAIL: title matches allowlist ("engineer") but JD is a stack
-    # dealbreaker — Java shop, no Python/JS/TS mentioned anywhere.
-    {"company": "BigCorp", "title": "Senior Software Engineer",
-     "location": "Remote Canada", "url": "https://example.com/jobs/8888",
-     "description": "5+ years of Java and Spring Boot required. Experience with Kafka a plus."},
-    # Should PASS: title matches, JD mentions Java AND Python — not a hard
-    # dealbreaker, worth letting through for the (future) AI step to judge.
-    {"company": "DualStackCo", "title": "Backend Engineer",
-     "location": "Remote Canada", "url": "https://example.com/jobs/7777",
-     "description": "Our platform is a mix of Java services and a newer Python/FastAPI stack."},
+    # Should FAIL: software-developer title is no longer a target
+    {"company": "Acme", "title": "Software Engineer, Backend",
+     "location": "Baltimore, MD", "url": "https://job-boards.greenhouse.io/acme/jobs/9998",
+     "description": "Python and Linux."},
+    # Should PASS: DC on-site Linux admin role
+    {"company": "CapitolCo", "title": "Linux Systems Administrator",
+     "location": "Washington, DC", "url": "https://jobs.lever.co/capitolco/1",
+     "description": "RHEL patching, Bash scripting, Ansible."},
+    # Should FAIL: requires a security clearance
+    {"company": "FedCo", "title": "Systems Administrator",
+     "location": "Fort Meade, MD", "url": "https://example.com/jobs/8888",
+     "description": "Active TS/SCI with polygraph required. Linux administration."},
+    # Should FAIL: mainframe-only stack dealbreaker
+    {"company": "LegacyCo", "title": "Systems Administrator",
+     "location": "Reston, VA", "url": "https://example.com/jobs/7777",
+     "description": "Administer IBM z/OS mainframe and COBOL batch jobs."},
+    # Should FAIL: 7+ years of experience required
+    {"company": "BigCorp", "title": "Cloud Engineer",
+     "location": "Remote, USA", "url": "https://example.com/jobs/6666",
+     "description": "<ul><li>7+ years of experience with AWS</li><li>Terraform</li></ul>"},
+    # Should PASS: accessibility track, certification only preferred
+    {"company": "A11yCo", "title": "Digital Accessibility Analyst",
+     "location": "Remote - US", "url": "https://example.com/jobs/5555",
+     "description": "<li>Test with JAWS, NVDA and VoiceOver against WCAG 2.2</li><li>CPACC preferred</li>"},
+    # Should FAIL: accessibility certification required
+    {"company": "A11yCo", "title": "Accessibility Specialist",
+     "location": "Remote - US", "url": "https://example.com/jobs/4444",
+     "description": "<li>IAAP CPACC or WAS certification required</li><li>WCAG audits</li>"},
     # Duplicate of the first PASS entry by URL -> should be filtered by dedup on 2nd pass
-    {"company": "Affirm", "title": "Senior Software Engineer, Backend (Batch Infrastructure)",
-     "location": "Remote Canada", "url": "https://job-boards.greenhouse.io/affirm/jobs/1111",
-     "description": "We use Python, FastAPI and React."},
+    {"company": "Acme", "title": "Junior DevOps Engineer",
+     "location": "Baltimore, MD", "url": "https://job-boards.greenhouse.io/acme/jobs/1111",
+     "description": "Maintain Linux servers, Docker and GitHub Actions pipelines on AWS."},
     # Repost under a new URL, same company+title -> should be caught by company+title dedup
-    {"company": "Affirm", "title": "Senior Software Engineer, Backend (Batch Infrastructure)",
-     "location": "Remote Canada", "url": "https://job-boards.greenhouse.io/affirm/jobs/3333-repost",
-     "description": "We use Python, FastAPI and React."},
-    # Should PASS: real Lever sample (AltaML), Edmonton without "Canada"/"AB" in the string
-    {"company": "AltaML", "title": "Intermediate Full Stack Software Engineer",
-     "location": "Edmonton, Calgary", "url": "https://jobs.lever.co/altaml/22d02404-b9c9-4b77-9448-add55d961444",
-     "description": "Python and React experience preferred."},
-    # Should PASS: real 2026-08-11 false-positive fix — "Software Engineer"
-    # is an unambiguous PRIORITY_TITLE_KEYWORDS match, so the "marketing"
-    # substring no longer trips EXCLUSION_KEYWORDS.
-    {"company": "Warner Music Group", "title": "Software Engineer, Automated Marketing",
-     "location": "Alberta, Canada", "url": "https://www.adzuna.ca/details/5702928490",
-     "description": "Build automated marketing tooling. Python and React."},
+    {"company": "Acme", "title": "Junior DevOps Engineer",
+     "location": "Baltimore, MD", "url": "https://job-boards.greenhouse.io/acme/jobs/3333-repost",
+     "description": "Maintain Linux servers, Docker and GitHub Actions pipelines on AWS."},
+    # Should PASS: NOC role in Northern Virginia, no description yet
+    {"company": "NetOps Inc", "title": "NOC Technician II",
+     "location": "Herndon, Fairfax County", "url": "https://jobs.lever.co/netops/2",
+     "description": ""},
 ]
 
 TEST_DB = "data/test_seen_jobs.sqlite3"
@@ -103,28 +103,44 @@ def main():
     print(f"\nFinal candidates after filters+dedup: {len(kept)}")
 
     # Assertions to make this a real check, not just eyeballing.
-    # PASS: Affirm SWE (x1 unique after dedup), Snorkel AI Calgary,
-    # DualStackCo (mixed stack, not a hard dealbreaker), AltaML.
-    # DROP: Compliance Lead, Remote US, Remote Poland, Marketing Ops Manager,
-    # Senior Manager Talent Brand, Occupational Health Nurse, BigCorp
-    # (Java-only dealbreaker).
-    assert len(filtered) == 7, f"expected 7 to pass all filters, got {len(filtered)}"
-    assert len(kept) == 5, f"expected 5 unique candidates after dedup, got {len(kept)}"
+    # PASS: Acme junior DevOps (x1 unique after dedup), CapitolCo Linux
+    # admin, A11yCo analyst (cert only preferred), NetOps NOC technician.
+    # DROP: compliance title, senior title, Remote Poland, marketing
+    # title, software engineer title, clearance, mainframe stack, 7+ years,
+    # required accessibility certification.
+    assert len(filtered) == 6, f"expected 6 to pass all filters, got {len(filtered)}"
+    assert len(kept) == 4, f"expected 4 unique candidates after dedup, got {len(kept)}"
 
-    # Targeted unit checks for the specific bugs found in the 2026-08-11 run.
+    # Targeted unit checks.
     assert not filters.location_is_allowed("Remote Poland")
     assert not filters.location_is_allowed("Remote Spain")
-    assert not filters.location_is_allowed("Remote Australia")
-    assert filters.location_is_allowed("Remote Canada")
-    assert filters.location_is_allowed("Calgary, AB")
+    assert not filters.location_is_allowed("Remote Canada")
+    assert not filters.location_is_allowed("Arlington, TX")
+    assert not filters.location_is_allowed("Columbia, SC")
+    assert not filters.location_is_allowed("Richmond, VA")
+    assert filters.location_is_allowed("Towson, Maryland")
+    assert filters.location_is_allowed("Arlington, VA")
+    assert filters.location_is_allowed("United States")
     assert not filters.title_is_relevant("Marketing Operations Manager")
-    assert not filters.title_is_relevant("Senior Manager, Talent Brand")
-    assert not filters.title_is_relevant("Compliance Lead, Canada")
-    assert filters.title_is_relevant("Senior Software Engineer, Backend")
-    assert filters.title_is_relevant("Software Engineer, Automated Marketing")
-    assert not filters.title_is_relevant("Sales Engineer")  # priority list shouldn't rescue this
-    assert filters.jd_stack_mismatch("5+ years of Java and Spring Boot required.")
-    assert not filters.jd_stack_mismatch("Java services and a Python/FastAPI stack.")
+    assert not filters.title_is_relevant("Staff SRE")
+    assert not filters.title_is_relevant("Sr. Linux Administrator")
+    assert not filters.title_is_relevant("Systems Engineer III")
+    assert not filters.title_is_relevant("Accessibility Program Manager")
+    assert not filters.title_is_relevant("Civil Infrastructure Engineer")
+    assert not filters.title_is_relevant("Sales Engineer")
+    assert filters.title_is_relevant("Associate Cloud Support Engineer")
+    assert filters.title_is_relevant("Site Reliability Engineer I")
+    assert filters.title_is_relevant("Web Accessibility Tester")
+    assert filters.requires_clearance("Systems Admin", "<li>Ability to obtain a Secret clearance</li>")
+    assert not filters.requires_clearance("Systems Admin", "Clear communication with stakeholders.")
+    assert not filters.requires_accessibility_cert("Familiarity with Trusted Tester methodology.")
+    assert filters.requires_accessibility_cert("<li>Must hold IAAP CPACC</li><li>CPWA a plus</li>")
+    assert not filters.requires_too_much_experience("2+ years of Linux experience required.")
+    assert not filters.requires_too_much_experience("5+ years of experience preferred.")
+    assert not filters.requires_too_much_experience("We were founded 10 years ago.")
+    assert filters.requires_too_much_experience("Minimum 5 years of experience in IT operations.")
+    assert filters.jd_stack_mismatch("Administer mainframe systems and COBOL jobs.")
+    assert not filters.jd_stack_mismatch("Mainframe integration from our Linux platform.")
     assert not filters.jd_stack_mismatch("")  # no JD available -> don't reject on stack alone
 
     print("\nAll assertions passed.")

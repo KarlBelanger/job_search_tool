@@ -252,11 +252,14 @@ def fetch_adzuna(params: dict) -> list[dict]:
 
     params = dict(params)  # don't mutate the caller's dict (reused across runs)
     max_pages = params.pop("max_pages", 5)
+    # Adzuna's country code is part of the URL path, not a query param.
+    # Defaults to "ca" for backward compatibility with older configs.
+    country = params.pop("country", "ca")
     results_per_page = params.get("results_per_page", 50)
 
     jobs = []
     for page in range(1, max_pages + 1):
-        url = f"https://api.adzuna.com/v1/api/jobs/ca/search/{page}"
+        url = f"https://api.adzuna.com/v1/api/jobs/{country}/search/{page}"
         query = {
             "app_id": app_id,
             "app_key": app_key,

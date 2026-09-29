@@ -5,21 +5,25 @@
 #
 # type: one of "adzuna" | "remotive"
 # params: passed straight through to that aggregator's search API, EXCEPT
-#   max_pages (adzuna only) — a pipeline-level control consumed by
-#   fetch_adzuna() before building the request, not sent to Adzuna itself.
+#   max_pages and country (adzuna only) — pipeline-level controls consumed
+#   by fetch_adzuna() before building the request. country is Adzuna's
+#   two-letter country code in the URL path ("us", "ca", "gb"...).
 #
-# EDIT ME: every Adzuna entry's `where` below is Alberta/Canada (the
-# original author's search) and `what` targets their keywords/stack.
-# Replace both with your own location and role keywords — and make sure
-# they match filters.yaml's location_allow_patterns/stack_core, or a real
-# result will still get filtered out downstream.
+# Configured for a junior DevOps / Linux / cloud infrastructure search
+# around Baltimore, DC and Northern Virginia plus US-remote, with a narrow
+# accessibility track. Adzuna's `what_or` matches ANY of the listed words,
+# so these queries are deliberately broad; filters.yaml's title, seniority,
+# location and clearance rules do the narrowing. Adzuna's `distance` is in
+# kilometres from `where`.
 
 aggregators:
-  - name: Adzuna (Canada, software engineer)
+  - name: Adzuna (Baltimore area, DevOps/Linux/cloud)
     type: adzuna
     params:
-      what: "software engineer"
-      where: "Alberta"
+      country: us
+      what_or: "devops linux sysadmin cloud sre noc infrastructure"
+      where: "Baltimore, MD"
+      distance: 50
       results_per_page: 50
       max_pages: 5   # up to 250 results; stops early if a page comes back short
     notes: >
@@ -28,28 +32,47 @@ aggregators:
       confirmed in research, check your account dashboard after signup).
       Set ADZUNA_APP_ID / ADZUNA_APP_KEY as environment variables.
 
-  - name: Adzuna (Canada, remote backend/fullstack)
+  - name: Adzuna (DC / Northern Virginia, DevOps/Linux/cloud)
     type: adzuna
     params:
-      what: "backend engineer OR full stack"
-      where: "Canada"
+      country: us
+      what_or: "devops linux sysadmin cloud sre noc infrastructure"
+      where: "Washington, DC"
+      distance: 40
       results_per_page: 50
       max_pages: 5
 
-  - name: Adzuna (Canada, remote senior software engineer)
+  - name: Adzuna (US remote, junior DevOps/Linux/cloud)
     type: adzuna
     params:
-      what: "software engineer"
-      where: "Canada"
+      country: us
+      what: "remote"
+      what_or: "devops linux sysadmin cloud sre"
       results_per_page: 50
-      max_pages: 1
+      max_pages: 3
 
-  - name: Remotive (software-dev category)
+  - name: Adzuna (US, accessibility testing)
+    type: adzuna
+    params:
+      country: us
+      what_or: "accessibility a11y wcag 508"
+      results_per_page: 50
+      max_pages: 2
+    notes: >
+      Nationwide on purpose: accessibility roles are rare, and
+      filters.yaml's location rules keep only Baltimore/DC/NoVA/US-remote.
+
+  - name: Remotive (DevOps / sysadmin category)
     type: remotive
     params:
-      category: "software-dev"
+      category: "devops"
     notes: >
-      No auth needed. Remote-only listings (won't catch Alberta on-site
-      roles). Remotive asks for max 4 requests/day and max 2/minute — keep
-      this to one call per pipeline run. Listings are delayed 24h from
+      No auth needed. Remote-only listings. Remotive asks for max 4
+      requests/day and max 2/minute. With the two Remotive entries here,
+      that's two pipeline runs a day at most. Listings are delayed 24h from
       posting per their terms.
+
+  - name: Remotive (Information Technology category)
+    type: remotive
+    params:
+      category: "information-technology"
