@@ -16,6 +16,7 @@ role AT ALL before we even consider it, then a smaller exclusion list
 catches engineering-adjacent titles that aren't a fit (sales engineer,
 hardware/mechanical engineer, etc).
 """
+import html
 import re
 
 import yaml
@@ -91,7 +92,8 @@ def strip_html(html_or_text: str) -> str:
     """Cheap HTML-to-text: good enough for keyword matching, not for display."""
     if not html_or_text:
         return ""
-    return _html_tag_re.sub(" ", html_or_text)
+    # Some ATSes (Greenhouse) return HTML-escaped markup ("&lt;li&gt;").
+    return _html_tag_re.sub(" ", html.unescape(html_or_text))
 
 
 def looks_truncated(description: str) -> bool:
@@ -157,7 +159,7 @@ def requires_clearance(title: str, description: str) -> bool:
 def _sentences(description: str) -> list[str]:
     # Block-level tags become line breaks first, so each <li> bullet is its
     # own "sentence" rather than running into the next one.
-    text = strip_html(_block_tag_re.sub("\n", description or ""))
+    text = strip_html(_block_tag_re.sub("\n", html.unescape(description or "")))
     return [s for s in _sentence_split_re.split(text) if s.strip()]
 
 

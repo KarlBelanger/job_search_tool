@@ -22,15 +22,15 @@ def main():
         original_text = f.read()
     original_companies = yaml.safe_load(original_text)["companies"]
 
-    # --- already-tracked companies (Affirm/greenhouse) should never be
+    # --- already-tracked companies (Tailscale/greenhouse) should never be
     # re-suggested, even with a different display-name casing from Adzuna ---
     known = discover_companies.load_known_keys(TEST_YAML)
-    assert ("greenhouse", "affirm") in known
-    assert ("workable", "treewalk") in known
+    assert ("greenhouse", "tailscale") in known
+    assert ("lever", "jobgether") in known
     print(f"load_known_keys OK: {len(known)} pairs loaded")
 
     discovered = [
-        {"name": "Affirm Inc.", "ats": "greenhouse", "slug": "affirm"},  # already known -> skip
+        {"name": "Tailscale Inc.", "ats": "greenhouse", "slug": "tailscale"},  # already known -> skip
         {"name": "Warner Music Group", "ats": "greenhouse", "slug": "warnermusicgroup"},  # new
         {"name": "Warner Music Group", "ats": "greenhouse", "slug": "warnermusicgroup"},  # dup within this run -> collapse
         {"name": "Some New Co", "ats": "lever", "slug": "somenewco"},  # new, different ATS
@@ -48,7 +48,7 @@ def main():
         new_text = f.read()
     assert new_text.startswith(original_text), "existing file content was modified, not just appended to"
     assert "# Company registry for the job discovery pipeline." in new_text  # header comment survived
-    assert "coveodeven" in new_text or "corrected 2026-08-10" in new_text  # provenance comment survived
+    assert "Trimmed 2026-09-29" in new_text  # provenance comment survived
     print("File comments/formatting preserved OK")
 
     # --- the whole file (original + appended block) must still be valid,

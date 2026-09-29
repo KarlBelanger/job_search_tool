@@ -60,7 +60,11 @@ title_allow_keywords:
   - "build engineer"
   - "release engineer"
   - "automation engineer"
-  - "monitoring"
+  # Not bare "monitoring": that also matches "Transaction Monitoring
+  # Analyst" and other non-infrastructure roles.
+  - "monitoring engineer"
+  - "monitoring specialist"
+  - "monitoring technician"
   - "observability"
   - "network administrator"
   - "network engineer"
@@ -87,6 +91,7 @@ seniority_exclude_keywords:
   - "expert"
   - "iii"
   - "iv"
+  - "managing"
 
 # Even if the title matched title_allow_keywords, drop it if it also
 # matches one of these — adjacent titles that aren't a fit.
@@ -142,6 +147,9 @@ exclusion_keywords:
   - "copywriting"
   - "compliance"
   - "product marketing"
+  - "data scientist"
+  - "data analyst"
+  - "artist"
 
 # Locations to keep, as regex patterns (case-insensitive) matched against
 # the free-text location string each ATS/aggregator returns. Covers all of
@@ -168,7 +176,7 @@ location_allow_patterns:
   # US remote
   - '\bremote\b.*\b(us|usa|u\.s\.a?|united states)\b'
   - '\b(us|usa|u\.s\.a?|united states)\b.*\bremote\b'
-  - '^\s*(us|usa|u\.s\.a?\.?|united states)\s*$'
+  - '^\s*(us|usa|u\.s\.a?\.?|united states( of america)?)\s*$'
   - '\b(north america|americas|worldwide|anywhere)\b'
 
 # JD stack dealbreakers — if the description clearly requires one of these
@@ -222,6 +230,9 @@ clearance_patterns:
   - '\bclearance\s+(is\s+)?required\b'
   - '\b(obtain|maintain|hold|possess)\s+(a\s+|an\s+)?(\w+\s+)?clearance\b'
   - '\bclearable\b'
+  # "CLEARED" as a title tag ("Engineer - CLEARED") or "cleared candidates".
+  - '(^|[-–(|,/]\s*)cleared\b'
+  - '\bcleared\s+(candidates?|professionals?|personnel|positions?|roles?)\b'
   - '\bpublic trust\b'
 
 # Accessibility certifications. A posting is dropped only when one sentence
